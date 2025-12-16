@@ -1,0 +1,268 @@
+<!DOCTYPE ahtml>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Halloween Quiz Chaos</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for the spam image positioning - Removed the opacity transition */
+        .spam-image {
+            position: fixed;
+            z-index: 2000; /* High Z-index to bring all GIFs to the front */
+            pointer-events: none; /* Allows clicks to pass through */
+        }
+        /* Custom style for the final state */
+        .halloween-mode {
+            cursor: pointer;
+            animation: pulse-shadow 1s infinite alternate;
+        }
+        @keyframes pulse-shadow {
+            from { box-shadow: 0 0 10px rgba(255, 140, 0, 0.8); }
+            to { box-shadow: 0 0 25px rgba(255, 69, 0, 1), 0 0 50px rgba(139, 0, 0, 0.7); }
+        }
+        /* Custom Keyframes for faster, aggressive pulse */
+        @keyframes aggressive-pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'spooky-orange': '#FF4500',
+                        'midnight': '#1a1a2e',
+                        'blood-red': '#8B0000',
+                    },
+                    animation: {
+                        // Define the custom, aggressive pulse animation
+                        'aggressive-pulse': 'aggressive-pulse 0.5s infinite alternate',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-midnight min-h-screen flex items-center justify-center p-4 font-sans text-white">
+
+    <audio id="sfx-audio" src="https://files.catbox.moe/fq8mkm.wav" preload="auto"></audio>
+
+    <!-- Quiz container has Z-index 1010, but GIFs are 2000 so they will overlay -->
+    <div id="quiz-container" class="w-full max-w-lg bg-gray-900 border-4 border-spooky-orange rounded-xl shadow-2xl p-6 md:p-10 transition-all duration-500 relative z-[1010]">
+        <!-- Quiz Content Area -->
+        <div id="quiz-content">
+            <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-spooky-orange">The Spooky Quiz</h1>
+            
+            <!-- Question Number/Score -->
+            <div class="flex justify-between text-lg mb-4 text-gray-400">
+                <span id="question-tracker">Question 1 / 5</span>
+                <span id="score-tracker">Score: 0</span>
+            </div>
+
+            <!-- Question Text -->
+            <p id="question-text" class="text-xl md:text-2xl font-semibold mb-8"></p>
+
+            <!-- Choices Container -->
+            <div id="choices-container" class="space-y-4">
+                <!-- Buttons will be injected here -->
+            </div>
+        </div>
+
+        <!-- Final/Spam Mode Content -->
+        <div id="final-message" class="hidden text-center">
+            <h2 class="text-6xl md:text-8xl lg:text-9xl font-extrabold text-blood-red mb-4 animate-aggressive-pulse">happy halloween</h2>
+            <p class="text-xl text-spooky-orange">Click anywhere to start the chaos!</p>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // --- QUIZ DATA AND STATE ---
+        const quizData = [
+            // Q1 (Index 0)
+            { question: "What date is Halloween traditionally celebrated?", choices: ["October 30th", "October 31st", "November 1st"], correct: "October 31st" },
+            // Q2 (Index 1)
+            { question: "What vegetable is traditionally carved into a Jack-o'-Lantern?", choices: ["Potato", "Pumpkin", "Carrot"], correct: "Pumpkin" },
+            // Q3 (Index 2)
+            { question: "What creature is often associated with turning into a bat?", choices: ["Werewolf", "Zombie", "Vampire"], correct: "Vampire" },
+            // Q4 (Index 3)
+            { question: "Which famous scary movie series features Michael Myers?", choices: ["Scream", "Nightmare on Elm Street", "Halloween"], correct: "Halloween" },
+            // Q5 (Index 4) - The final question that triggers the spam upon completion
+            { question: "What phrase do kids typically say when trick-or-treating?", choices: ["Give me treats!", "Trick or Treat!", "Happy Halloween!"], correct: "Trick or Treat!" },
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let isSpamMode = false;
+
+        // --- DOM REFERENCES ---
+        const quizContainer = document.getElementById('quiz-container');
+        const questionText = document.getElementById('question-text');
+        const choicesContainer = document.getElementById('choices-container');
+        const questionTracker = document.getElementById('question-tracker');
+        const scoreTracker = document.getElementById('score-tracker');
+        const finalMessage = document.getElementById('final-message');
+        const quizContent = document.getElementById('quiz-content');
+        const audio = document.getElementById('sfx-audio');
+
+        // --- CORE QUIZ FUNCTIONS ---
+
+        /**
+         * Displays the current question and generates choice buttons.
+         */
+        function displayQuestion() {
+            if (currentQuestionIndex >= quizData.length) {
+                // Should not happen if logic is correct, but safe guard.
+                return;
+            }
+
+            const currentQuestion = quizData[currentQuestionIndex];
+            
+            questionTracker.textContent = `Question ${currentQuestionIndex + 1} / ${quizData.length}`;
+            questionText.textContent = currentQuestion.question;
+            choicesContainer.innerHTML = ''; // Clear previous choices
+
+            currentQuestion.choices.forEach(choice => {
+                const button = document.createElement('button');
+                button.textContent = choice;
+                button.classList.add(
+                    'w-full', 'py-3', 'px-4', 'bg-spooky-orange', 'hover:bg-blood-red', 'text-white', 
+                    'font-bold', 'rounded-lg', 'transition', 'duration-200', 'shadow-md', 'shadow-spooky-orange/50'
+                );
+                // Attach the event listener to the button
+                button.addEventListener('click', () => handleAnswer(choice, currentQuestion.correct));
+                choicesContainer.appendChild(button);
+            });
+        }
+
+        /**
+         * Handles the user's answer submission.
+         * @param {string} selectedChoice - The choice the user selected.
+         * @param {string} correctAnswer - The correct answer for the current question.
+         */
+        function handleAnswer(selectedChoice, correctAnswer) {
+            if (selectedChoice === correctAnswer) {
+                score++;
+                scoreTracker.textContent = `Score: ${score}`;
+            }
+
+            currentQuestionIndex++;
+
+            if (currentQuestionIndex === quizData.length) {
+                // If we have finished the last question (Question 5)
+                triggerHalloweenSpam();
+            } else {
+                displayQuestion();
+            }
+        }
+
+        // --- SPAM MODE FUNCTIONS ---
+        
+        /**
+         * Plays the spooky audio track.
+         */
+        function playAudio() {
+            // Stop and rewind if it's already playing
+            audio.pause();
+            audio.currentTime = 0; 
+            // Play the audio
+            const playPromise = audio.play();
+            if (playPromise !== undefined) {
+                playPromise.then(_ => {
+                    // Autoplay started!
+                }).catch(error => {
+                    // Autoplay was prevented (e.g., first user interaction)
+                    console.warn("Audio playback prevented:", error.message);
+                });
+            }
+        }
+
+        /**
+         * Creates and inserts a single spam image at a random position.
+         * @param {number} x - The x coordinate for placement.
+         * @param {number} y - The y coordinate for placement.
+         * @param {boolean} isFullscreen - If true, the image covers the whole screen.
+         */
+        function createSpamImage(x, y, isFullscreen = false) {
+            const img = document.createElement('img');
+            img.src = 'https://files.catbox.moe/lajwaf.gif'; // The repeating GIF
+            img.classList.add('spam-image');
+            
+            if (isFullscreen) {
+                // Fullscreen setup
+                img.style.width = '100vw';
+                img.style.height = '100vh';
+                img.style.top = '0';
+                img.style.left = '0';
+                img.style.opacity = '1'; // No opacity/full visibility
+            } else {
+                // Regular spam image setup
+                // Random size variation for chaos
+                const size = Math.floor(Math.random() * 80) + 50; // 50px to 130px
+                img.style.width = `${size}px`;
+                img.style.height = 'auto';
+
+                // Position the image near the click point (x, y)
+                img.style.left = `${x - size / 2}px`;
+                img.style.top = `${y - size / 2}px`;
+                img.style.opacity = '1'; // No opacity/full visibility
+            }
+
+            // NOTE: Removal/fading time-outs removed per user request. Images will stack.
+            
+            document.body.appendChild(img);
+        }
+
+        /**
+         * The handler for the click event when in spam mode.
+         */
+        function spamAndPlay(event) {
+            playAudio();
+            
+            // 1. Create the single fullscreen image
+            // Position doesn't matter for fullscreen, but we pass 0, 0
+            createSpamImage(0, 0, true);
+
+            // 2. Create exactly 50 random images
+            for (let i = 0; i < 50; i++) {
+                // Randomize position across the entire viewport for chaos
+                const randomX = Math.random() * window.innerWidth;
+                const randomY = Math.random() * window.innerHeight;
+                
+                createSpamImage(randomX, randomY, false);
+            }
+        }
+
+        /**
+         * Initiates the Halloween Spam Mode (Question 5 result).
+         */
+        function triggerHalloweenSpam() {
+            isSpamMode = true;
+            
+            // 1. Update the display to the final message
+            quizContent.classList.add('hidden');
+            finalMessage.classList.remove('hidden');
+            
+            // 2. Change container style to be a click target and elevate its Z-index
+            quizContainer.classList.add('halloween-mode', 'cursor-pointer', 'min-h-[400px]', 'flex', 'items-center', 'justify-center', 'relative', 'z-[1010]');
+            quizContainer.classList.remove('p-6', 'md:p-10', 'shadow-2xl', 'w-full', 'max-w-lg');
+            quizContainer.classList.add('w-11/12', 'max-w-4xl', 'h-[80vh]'); // Make it bigger
+
+            // 3. Play the audio immediately for the first time
+            playAudio();
+
+            // 4. Set the global click handler
+            document.addEventListener('click', spamAndPlay);
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = () => {
+            displayQuestion();
+        };
+
+    </script>
+</body>
+</html>
